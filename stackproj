@@ -168,7 +168,20 @@ def cmd_switch(args):
     # Switch superproject
     run(f"git checkout {feature}")
 
-    # Switch each submodule
+    # First: reset ALL submodules to superproject HEAD pointer (detached)
+    result = run("git submodule status", check=False)
+    for line in result.stdout.strip().split("\n"):
+        if line and not line.startswith("fatal:"):
+            parts = line.split()
+            if len(parts) >= 2:
+                submodule_path = parts[1]
+                if os.path.exists(submodule_path):
+                    recorded = run(f"git ls-tree HEAD {submodule_path}")
+                    if recorded.returncode == 0:
+                        commit_hash = recorded.stdout.split()[2]
+                        run(f"git -C {submodule_path} checkout --detach -f {commit_hash}")
+
+    # Then: switch each submodule to its feature branch
     for submodule, info in stack["features"][feature]["submodules"].items():
         branch = info["branch"]
         if os.path.exists(submodule):
