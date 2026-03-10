@@ -212,6 +212,85 @@ def cmd_list(args):
             print(f"    - {s}: {info['submodules'][s]['branch']}")
 
 
+def cmd_doctor(args):
+    """Check for problems and optionally fix them."""
+    stack = load_stack()
+    fix = args.fix
+    problems = []
+
+    # Check 1: current feature set but branch doesn't exist
+    current = stack.get("current")
+    if current:
+        result = run(f"git rev-parse --verify {current}", check=False)
+        if result.returncode != 0:
+            problems.append(f"Current feature '{current}' branch does not exist in superproject")
+
+    # Check 2: tracked submodules that don't exist
+    for feature, info in stack["features"].items():
+        for submodule, subinfo in info["submodules"].items():
+            if not os.path.exists(submodule):
+                problems.append(f"Submodule '{submodule}' tracked in '{feature}' does not exist")
+            else:
+                # Check if branch exists
+                branch = subinfo["branch"]
+                result = run(f"git -C {submodule} rev-parse --verify {branch}", check=False)
+                if result.returncode != 0:
+                    problems.append(f"Branch '{branch}' in '{submodule}' does not exist")
+
+    # Check 3: submodules on branches not tracked
+    if os.path.exists(".gitmodules"):
+        result = run("git submodule status", check=False)
+        if result.returncode == 0:
+            for line in result.stdout.strip().split("\n"):
+                if line:
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        submodule_path = parts[1]
+                        # Check if on a branch
+                        branch_result = run(f"git -C {submodule_path} rev-parse --abbrev-ref HEAD", check=False)
+                        if branch_result.returncode == 0:
+                            current_branch = branch_result.stdout.strip()
+                            if current_branch != "HEAD":
+                                # Check if tracked
+                                tracked = False
+                                for feature, info in stack["features"].items():
+                                    if submodule_path in info["submodules"]:
+                                        if info["submodules"][submodule_path]["branch"] == current_branch:
+                                            tracked = True
+                                if not tracked:
+                                    problems.append(f"Submodule '{submodule_path}' on untracked branch '{current_branch}'")
+
+    if not problems:
+        print("No problems found")
+        return
+
+    print("Problems found:")
+    for p in problems:
+        print(f"  - {p}")
+
+    if fix:
+        print("\nFixing...")
+        # Fix 1: current feature branch doesn't exist
+        if current:
+            result = run(f"git rev-parse --verify {current}", check=False)
+            if result.returncode != 0:
+                stack["current"] = None
+                print(f"  Cleared current feature '{current}'")
+
+        # Fix 2: remove missing submodules
+        for feature, info in list(stack["features"].items()):
+            for submodule in list(info["submodules"].keys()):
+                if not os.path.exists(submodule):
+                    del stack["features"][feature]["submodules"][submodule]
+                    print(f"  Removed missing submodule '{submodule}' from '{feature}'")
+
+        # Fix 3: submodules on untracked branches - leave as warning only, don't auto-fix
+        save_stack(stack)
+        print("\nDone")
+    else:
+        print("\nRun 'stackproj doctor fix' to fix these problems")
+
+
 def cmd_main(args):
     """Switch back to main, detached head for all submodules."""
     stack = load_stack()
@@ -340,6 +419,10 @@ def main():
     p_delete = subparsers.add_parser("delete", help="Delete a feature and its branches")
     p_delete.add_argument("feature", help="Feature name")
     p_delete.set_defaults(func=cmd_delete)
+
+    p_doctor = subparsers.add_parser("doctor", help="Check for problems")
+    p_doctor.add_argument("--fix", action="store_true", help="Fix problems")
+    p_doctor.set_defaults(func=cmd_doctor)
 
     p_main = subparsers.add_parser("main", help="Switch to main, detach submodules")
     p_main.set_defaults(func=cmd_main)
