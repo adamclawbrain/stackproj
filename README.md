@@ -16,12 +16,12 @@ pip install stackproj
 ## Usage
 
 ```bash
-# Create a new feature (creates branch in superproject + all submodules)
+# Create a new feature (branch in superproject only)
 stackproj create featureA
 
-# Add a submodule to the current feature
-# (creates a featureA-submodule branch and tracks it)
-stackproj add my-submodule
+# Add submodules to the current feature
+# (creates username/feature/repo branch and tracks it)
+stackproj add portal product
 
 # Switch to a different feature
 # (checks out superproject branch, then all submodule branches)
@@ -32,14 +32,38 @@ stackproj status
 
 # List all features and their submodules
 stackproj list
+
+# Switch back to main, detach all submodules
+stackproj main
+
+# Remove a submodule from current feature
+# (restores superproject pointer, deletes feature branch)
+stackproj remove portal
+
+# Delete a feature entirely (all branches)
+stackproj delete featureA
+
+# Check for problems
+stackproj doctor
+stackproj doctor fix  # auto-fix
 ```
+
+## Branch Naming
+
+Submodule branches use format: `username/project/repo`
+- Example: `aplatti/featureA/portal`
+
+Feature names must be valid git branch names (letters, numbers, dashes, underscores).
 
 ## How it works
 
 - `.stackproj.yml` - YAML file in project root tracking features and submodule branches
-- `stackproj create` - Creates branch in superproject, optionally in all submodules
-- `stackproj add` - Creates a `<feature>-<submodule>` branch in that submodule
+- `stackproj create` - Creates branch in superproject
+- `stackproj add` - Creates `<username>/<feature>/<repo>` branch in submodule
 - `stackproj switch` - Checks out superproject branch + all associated submodule branches
+- `stackproj remove` - Restores submodule to superproject HEAD, deletes feature branch
+- `stackproj main` - Switches superproject to main, detaches all submodules at recorded commits
+- `stackproj delete` - Deletes feature from superproject and all submodules
 
 ## Example workflow
 
@@ -48,14 +72,19 @@ stackproj list
 stackproj create login-redesign
 
 # Add some submodules to this feature
-stackproj add ui-components
-stackproj add auth-service
+stackproj add ui-components auth-service
 
 # ... do work ...
 
 # Switch to a different feature (if you had one)
 stackproj switch payment-overhaul
 # Now your superproject and both submodules are on payment-overhaul branches
+
+# Done with a submodule in this feature?
+stackproj remove ui-components
+
+# Done with the whole feature?
+stackproj delete login-redesign
 ```
 
 ## Requirements
