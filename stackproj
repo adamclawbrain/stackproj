@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+"""
+stackproj - Feature branch management for git repos with submodules
+
+Usage:
+    stackproj create <feature>     Create a new feature branch in superproject
+    stackproj add <submodule>      Add submodule to current feature
+    stackproj switch <feature>     Switch to a different feature (all submodules)
+    stackproj status               Show current feature and its submodules
+    stackproj list                 List all features
+"""
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+STACK_FILE = ".stackproj.json"
+
+
+def get_project_root():
+    """Find the project root (where .stackproj.json lives)."""
+    cwd = Path.cwd()
+    while cwd != cwd.parent:
+        if (cwd / STACK_FILE).exists():
+            return cwd
+        cwd = cwd.parent
+    return None
+
+
+def run(cmd, cwd=None, check=True):
+    """Run a shell command."""
+    result = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True)
+    if check and result.returncode != 0:
+        print(f"Error: {result.stderr.strip()}", file=sys.stderr)
+        sys.exit(1)
+    return result
+
+
+def load_stack():
+    """Load the stack file."""
+    root = get_project_root()
+    if not root:
+        print(f"Error: No {STACK_FILE} found. Not in a stackproj project?", file=sys.stderr)
+        sys.exit(1)
+    stack_file = root / STACK_FILE
+    if stack_file.exists():
+        with open(stack_file) as f:
+            return json.load(f)
+    return {"current": None, "features": {}}
+
+
+def save_stack(data):
+    """Save the stack file."""
+    root = get_project_root()
+    stack_file = root / STACK_FILE
+    with open(stack_file, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def cmd_create(args):
+    """Create a new feature branch."""
+    stack = load_stack()
+    feature = args.feature
+
+    if feature in stack["features"]:
+        print(f"Feature '{feature}' already exists")
+        sys.exit(1)
+
+    # Get current branch to fork from
+    result = run("git rev-parse --abbrev-ref HEAD", check=False)
+    base_branch = result.stdout.strip() if result.returncode == 0 else "main"
+
+    # Create branch in superproject
+    run(f"git checkout -b {feature}")
+
+    # Also create in submodules if they exist
+    if os.path.exists(".gitmodules"):
+        result = run("git submodule status", check=False)
+        if result.returncode == 0:
+            for line in result.stdout.strip().split("\n"):
+                if line:
+                    # Format: <hash> <path> (<branch>)
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        submodule_path = parts[1]
+                        # Create same branch in submodule
+                        run(f"git -C {submodule_path} checkout -b {feature}")
+
+    # Save to stack
+    stack["features"][feature] = {
+        "base": base_branch,
+        "submodules": {}
+    }
+    stack["current"] = feature
+    save_stack(stack)
+    print(f"Created feature '{feature}' (forked from {base_branch})")
+
+
+def cmd_add(args):
+    """Add a submodule to the current feature."""
+    stack = load_stack()
+    current = stack.get("current")
+
+    if not current:
+        print("Error: No feature selected. Use 'stackproj create' first.")
+        sys.exit(1)
+
+    submodule = args.submodule
+
+    if not os.path.exists(submodule):
+        print(f"Error: Submodule '{submodule}' not found")
+        sys.exit(1)
+
+    # Create a derived branch name: feature-submodule
+    submodule_branch = f"{current}-{submodule}"
+
+    # Create branch in submodule
+    result = run(f"git -C {submodule} rev-parse --abbrev-ref HEAD", check=False)
+    base_branch = result.stdout.strip() if result.returncode == 0 else "main"
+
+    run(f"git -C {submodule} checkout -b {submodule_branch}")
+
+    # Record it
+    stack["features"][current]["submodules"][submodule] = {
+        "branch": submodule_branch,
+        "base": base_branch
+    }
+    save_stack(stack)
+    print(f"Added '{submodule}' to feature '{current}' as branch '{submodule_branch}'")
+
+
+def cmd_switch(args):
+    """Switch to a different feature."""
+    stack = load_stack()
+    feature = args.feature
+
+    if feature not in stack["features"]:
+        print(f"Error: Feature '{feature}' not found")
+        sys.exit(1)
+
+    # Switch superproject
+    run(f"git checkout {feature}")
+
+    # Switch each submodule
+    for submodule, info in stack["features"][feature]["submodules"].items():
+        branch = info["branch"]
+        if os.path.exists(submodule):
+            run(f"git -C {submodule} checkout {branch}")
+            print(f"  {submodule}: {branch}")
+        else:
+            print(f"  Warning: {submodule} not found", file=sys.stderr)
+
+    stack["current"] = feature
+    save_stack(stack)
+    print(f"Switched to feature '{feature}'")
+
+
+def cmd_status(args):
+    """Show current status."""
+    stack = load_stack()
+    current = stack.get("current")
+
+    if not current:
+        print("No feature selected")
+        return
+
+    print(f"Current feature: {current}")
+    print("Submodules:")
+    for submodule, info in stack["features"][current]["submodules"].items():
+        print(f"  {submodule}: {info['branch']}")
+
+
+def cmd_list(args):
+    """List all features."""
+    stack = load_stack()
+    if not stack["features"]:
+        print("No features found")
+        return
+
+    for name, info in stack["features"].items():
+        marker = " *" if name == stack.get("current") else " "
+        submodules = list(info["submodules"].keys())
+        print(f"{marker} {name} (from {info['base']})")
+        for s in submodules:
+            print(f"    - {s}: {info['submodules'][s]['branch']}")
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="stackproj")
+    subparsers = parser.add_subparsers()
+
+    p_create = subparsers.add_parser("create", help="Create a new feature")
+    p_create.add_argument("feature", help="Feature name")
+    p_create.set_defaults(func=cmd_create)
+
+    p_add = subparsers.add_parser("add", help="Add a submodule to current feature")
+    p_add.add_argument("submodule", help="Submodule path")
+    p_add.set_defaults(func=cmd_add)
+
+    p_switch = subparsers.add_parser("switch", help="Switch to a feature")
+    p_switch.add_argument("feature", help="Feature name")
+    p_switch.set_defaults(func=cmd_switch)
+
+    subparsers.add_parser("status", help="Show current status")
+    subparsers.add_parser("list", help="List all features")
+
+    args = parser.parse_args()
+
+    if hasattr(args, "func"):
+        args.func(args)
+    else:
+        parser.print_help()
+
+
+if __name__ == "__main__":
+    main()
