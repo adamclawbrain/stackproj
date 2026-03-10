@@ -232,8 +232,8 @@ def cmd_remove(args):
 
     branch = stack["features"][current]["submodules"][submodule]["branch"]
 
-    # Get recorded commit from superproject main (not current HEAD)
-    result = run(f"git ls-tree main {submodule}")
+    # Get recorded commit from current superproject branch
+    result = run(f"git ls-tree HEAD {submodule}")
     if result.returncode == 0:
         commit_hash = result.stdout.split()[1]
         if os.path.exists(submodule):
