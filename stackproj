@@ -197,7 +197,7 @@ def cmd_main(args):
                 parts = line.split()
                 if len(parts) >= 2:
                     submodule_path = parts[1]
-                    commit_hash = parts[0]
+                    commit_hash = parts[0].lstrip("+")
                     run(f"git -C {submodule_path} checkout {commit_hash}")
                     submodules.append((submodule_path, commit_hash[:7]))
 
