@@ -26,6 +26,7 @@ def git_repo(temp_dir):
     subprocess.run(["git", "config", "user.email", "test@test.com"], check=True, capture_output=True)
     subprocess.run(["git", "config", "user.name", "Test"], check=True, capture_output=True)
     subprocess.run(["git", "config", "protocol.file.allow", "always"], check=True, capture_output=True)
+    subprocess.run(["git", "config", "--global", "--add", "safe.directory", "*"], check=True, capture_output=True)
     # Initial commit
     (temp_dir / "README.md").write_text("# Test\n")
     subprocess.run(["git", "add", "."], check=True, capture_output=True)
