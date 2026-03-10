@@ -237,8 +237,8 @@ def cmd_remove(args):
     if result.returncode == 0:
         commit_hash = result.stdout.split()[1]
         if os.path.exists(submodule):
-            # Checkout recorded commit
-            run(f"git -C {submodule} checkout {commit_hash}")
+            # Discard any local changes and checkout recorded commit
+            run(f"git -C {submodule} checkout -f {commit_hash}")
             print(f"  {submodule}: detached at {commit_hash[:7]}")
 
             # Delete the feature branch
