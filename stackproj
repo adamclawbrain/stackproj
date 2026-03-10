@@ -79,21 +79,8 @@ def cmd_create(args):
     result = run("git rev-parse --abbrev-ref HEAD", check=False)
     base_branch = result.stdout.strip() if result.returncode == 0 else "main"
 
-    # Create branch in superproject
+    # Create branch in superproject only
     run(f"git checkout -b {feature}")
-
-    # Also create in submodules if they exist
-    if os.path.exists(".gitmodules"):
-        result = run("git submodule status", check=False)
-        if result.returncode == 0:
-            for line in result.stdout.strip().split("\n"):
-                if line:
-                    # Format: <hash> <path> (<branch>)
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        submodule_path = parts[1]
-                        # Create same branch in submodule
-                        run(f"git -C {submodule_path} checkout -b {feature}")
 
     # Save to stack
     stack["features"][feature] = {
