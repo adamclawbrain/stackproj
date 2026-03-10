@@ -30,7 +30,7 @@ def test_switch_checks_out_submodules(git_repo_with_submodule):
         ["git", "-C", "my-submodule", "rev-parse", "--abbrev-ref", "HEAD"],
         capture_output=True, text=True
     )
-    assert result.stdout.strip() == "feature1-my-submodule"
+    assert result.stdout.strip() == "test/feature1/my-submodule"
 
 
 def test_switch_updates_current(git_repo_with_submodule):

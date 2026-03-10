@@ -11,14 +11,14 @@ def test_add_creates_branch_in_submodule(git_repo_with_submodule):
 
     # Now add the submodule
     result = run_stackproj(["add", "my-submodule"])
-    assert result.returncode == 0, result.stderr
+    assert result.returncode == 0, result.stdout
 
     # Check branch exists in submodule
     result = subprocess.run(
         ["git", "-C", "my-submodule", "branch"],
         capture_output=True, text=True
     )
-    assert "feature1-my-submodule" in result.stdout
+    assert "test/feature1/my-submodule" in result.stdout
 
 
 def test_add_records_submodule(git_repo_with_submodule):
@@ -31,7 +31,7 @@ def test_add_records_submodule(git_repo_with_submodule):
         data = yaml.safe_load(f)
 
     assert "my-submodule" in data["features"]["feature1"]["submodules"]
-    assert data["features"]["feature1"]["submodules"]["my-submodule"]["branch"] == "feature1-my-submodule"
+    assert data["features"]["feature1"]["submodules"]["my-submodule"]["branch"] == "test/feature1/my-submodule"
 
 
 def test_add_multiple_submodules(git_repo_with_submodule):
@@ -47,7 +47,7 @@ def test_add_requires_current_feature(git_repo_with_submodule):
     """Add should fail if no feature selected."""
     result = run_stackproj(["add", "my-submodule"])
     assert result.returncode != 0
-    assert "No feature selected" in result.stderr
+    assert "No feature selected" in result.stdout
 
 
 def test_add_checks_out_branch(git_repo_with_submodule):
@@ -59,4 +59,4 @@ def test_add_checks_out_branch(git_repo_with_submodule):
         ["git", "-C", "my-submodule", "rev-parse", "--abbrev-ref", "HEAD"],
         capture_output=True, text=True
     )
-    assert result.stdout.strip() == "feature1-my-submodule"
+    assert result.stdout.strip() == "test/feature1/my-submodule"

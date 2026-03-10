@@ -29,7 +29,7 @@ def test_list_shows_submodules(git_repo_with_submodule):
 
     result = run_stackproj(["list"])
     assert "my-submodule" in result.stdout
-    assert "feature1-my-submodule" in result.stdout
+    assert "test/feature1/my-submodule" in result.stdout
 
 
 def test_status_shows_current(git_repo_with_submodule):
@@ -48,7 +48,7 @@ def test_status_shows_submodules(git_repo_with_submodule):
 
     result = run_stackproj(["status"])
     assert "my-submodule" in result.stdout
-    assert "feature1-my-submodule" in result.stdout
+    assert "test/feature1/my-submodule" in result.stdout
 
 
 def test_status_no_feature(git_repo):

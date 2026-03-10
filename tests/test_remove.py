@@ -14,18 +14,18 @@ def test_remove_deletes_submodule_branch(git_repo_with_submodule):
         ["git", "-C", "my-submodule", "branch"],
         capture_output=True, text=True
     )
-    assert "aplatti/feature1/my-submodule" in result.stdout
+    assert "test/feature1/my-submodule" in result.stdout
 
     # Remove
     result = run_stackproj(["remove", "my-submodule"])
-    assert result.returncode == 0, result.stderr
+    assert result.returncode == 0, result.stdout
 
     # Branch should be gone
     result = subprocess.run(
         ["git", "-C", "my-submodule", "branch"],
         capture_output=True, text=True
     )
-    assert "aplatti/feature1/my-submodule" not in result.stdout
+    assert "test/feature1/my-submodule" not in result.stdout
 
 
 def test_remove_restores_superproject_pointer(git_repo_with_submodule):
@@ -60,7 +60,7 @@ def test_remove_requires_current_feature(git_repo_with_submodule):
     """Remove should fail if no feature selected."""
     result = run_stackproj(["remove", "my-submodule"])
     assert result.returncode != 0
-    assert "No feature selected" in result.stderr
+    assert "No feature selected" in result.stdout
 
 
 def test_remove_fails_for_unknown_submodule(git_repo_with_submodule):

@@ -31,6 +31,9 @@ def test_main_detaches_submodules(git_repo_with_submodule):
     """Main should detach submodules."""
     run_stackproj(["create", "feature1"])
     run_stackproj(["add", "my-submodule"])
+    # Commit the changes so main can properly switch
+    subprocess.run(["git", "add", "."], capture_output=True)
+    subprocess.run(["git", "commit", "-m", "add submodule"], capture_output=True)
 
     result = run_stackproj(["main"])
     assert result.returncode == 0, result.stderr
