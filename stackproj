@@ -181,6 +181,48 @@ def cmd_list(args):
             print(f"    - {s}: {info['submodules'][s]['branch']}")
 
 
+def cmd_delete(args):
+    """Delete a feature and all its branches."""
+    stack = load_stack()
+    feature = args.feature
+
+    if feature not in stack["features"]:
+        print(f"Error: Feature '{feature}' not found")
+        sys.exit(1)
+
+    info = stack["features"][feature]
+    submodules = list(info["submodules"].keys())
+
+    # Show what will be deleted
+    print(f"Will delete feature '{feature}':")
+    print(f"  - superproject branch: {feature}")
+    for s in submodules:
+        print(f"  - {s} branch: {info['submodules'][s]['branch']}")
+
+    confirm = input("\nType 'yes' to confirm: ")
+    if confirm != "yes":
+        print("Cancelled")
+        return
+
+    # Delete superproject branch (switch to main first if needed)
+    current = run("git rev-parse --abbrev-ref HEAD").stdout.strip()
+    if current == feature:
+        run("git checkout main")
+    run(f"git branch -D {feature}", check=False)
+
+    # Delete submodule branches
+    for s in submodules:
+        if os.path.exists(s):
+            run(f"git -C {s} branch -D {info['submodules'][s]['branch']}", check=False)
+
+    # Remove from stack
+    del stack["features"][feature]
+    if stack.get("current") == feature:
+        stack["current"] = None
+    save_stack(stack)
+    print(f"Deleted feature '{feature}'")
+
+
 def main():
     parser = argparse.ArgumentParser(prog="stackproj")
     subparsers = parser.add_subparsers()
@@ -196,6 +238,10 @@ def main():
     p_switch = subparsers.add_parser("switch", help="Switch to a feature")
     p_switch.add_argument("feature", help="Feature name")
     p_switch.set_defaults(func=cmd_switch)
+
+    p_delete = subparsers.add_parser("delete", help="Delete a feature and its branches")
+    p_delete.add_argument("feature", help="Feature name")
+    p_delete.set_defaults(func=cmd_delete)
 
     subparsers.add_parser("status", help="Show current status")
     subparsers.add_parser("list", help="List all features")
