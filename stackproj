@@ -181,6 +181,32 @@ def cmd_list(args):
             print(f"    - {s}: {info['submodules'][s]['branch']}")
 
 
+def cmd_main(args):
+    """Switch back to main, detached head for all submodules."""
+    stack = load_stack()
+
+    # Switch superproject to main
+    run("git checkout main")
+
+    # Detach all submodules at their main branch HEAD
+    result = run("git submodule status", check=False)
+    if result.returncode == 0:
+        for line in result.stdout.strip().split("\n"):
+            if line:
+                parts = line.split()
+                if len(parts) >= 2:
+                    submodule_path = parts[1]
+                    # Get the commit hash from the first column
+                    commit_hash = parts[0]
+                    run(f"git -C {submodule_path} checkout {commit_hash}")
+                    print(f"  {submodule_path}: detached at {commit_hash[:7]}")
+
+    # Clear current
+    stack["current"] = None
+    save_stack(stack)
+    print("Switched to main, submodules detached")
+
+
 def cmd_delete(args):
     """Delete a feature and all its branches."""
     stack = load_stack()
@@ -243,6 +269,7 @@ def main():
     p_delete.add_argument("feature", help="Feature name")
     p_delete.set_defaults(func=cmd_delete)
 
+    subparsers.add_parser("main", help="Switch to main, detach submodules")
     subparsers.add_parser("status", help="Show current status")
     subparsers.add_parser("list", help="List all features")
 
