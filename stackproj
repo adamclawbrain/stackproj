@@ -106,7 +106,7 @@ def cmd_create(args):
 
 
 def cmd_add(args):
-    """Add a submodule to the current feature."""
+    """Add submodule(s) to the current feature."""
     stack = load_stack()
     current = stack.get("current")
 
@@ -114,28 +114,28 @@ def cmd_add(args):
         print("Error: No feature selected. Use 'stackproj create' first.")
         sys.exit(1)
 
-    submodule = args.submodule
+    for submodule in args.submodules:
+        if not os.path.exists(submodule):
+            print(f"Error: Submodule '{submodule}' not found")
+            continue
 
-    if not os.path.exists(submodule):
-        print(f"Error: Submodule '{submodule}' not found")
-        sys.exit(1)
+        # Create a derived branch name: feature-submodule
+        submodule_branch = f"{current}-{submodule}"
 
-    # Create a derived branch name: feature-submodule
-    submodule_branch = f"{current}-{submodule}"
+        # Create branch in submodule
+        result = run(f"git -C {submodule} rev-parse --abbrev-ref HEAD", check=False)
+        base_branch = result.stdout.strip() if result.returncode == 0 else "main"
 
-    # Create branch in submodule
-    result = run(f"git -C {submodule} rev-parse --abbrev-ref HEAD", check=False)
-    base_branch = result.stdout.strip() if result.returncode == 0 else "main"
+        run(f"git -C {submodule} checkout -b {submodule_branch}")
 
-    run(f"git -C {submodule} checkout -b {submodule_branch}")
+        # Record it
+        stack["features"][current]["submodules"][submodule] = {
+            "branch": submodule_branch,
+            "base": base_branch
+        }
+        print(f"Added '{submodule}' to feature '{current}' as branch '{submodule_branch}'")
 
-    # Record it
-    stack["features"][current]["submodules"][submodule] = {
-        "branch": submodule_branch,
-        "base": base_branch
-    }
     save_stack(stack)
-    print(f"Added '{submodule}' to feature '{current}' as branch '{submodule_branch}'")
 
 
 def cmd_switch(args):
@@ -202,8 +202,8 @@ def main():
     p_create.add_argument("feature", help="Feature name")
     p_create.set_defaults(func=cmd_create)
 
-    p_add = subparsers.add_parser("add", help="Add a submodule to current feature")
-    p_add.add_argument("submodule", help="Submodule path")
+    p_add = subparsers.add_parser("add", help="Add submodule(s) to current feature")
+    p_add.add_argument("submodules", nargs="+", help="Submodule path(s)")
     p_add.set_defaults(func=cmd_add)
 
     p_switch = subparsers.add_parser("switch", help="Switch to a feature")
