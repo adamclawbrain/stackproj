@@ -22,13 +22,14 @@ STACK_FILE = ".stackproj.yml"
 
 
 def get_project_root():
-    """Find the project root (where .stackproj.json lives)."""
+    """Find the project root (where .stackproj.yml lives)."""
     cwd = Path.cwd()
     while cwd != cwd.parent:
         if (cwd / STACK_FILE).exists():
             return cwd
         cwd = cwd.parent
-    return None
+    # Not found in parents - create in current dir
+    return Path.cwd()
 
 
 def run(cmd, cwd=None, check=True):
@@ -43,19 +44,23 @@ def run(cmd, cwd=None, check=True):
 def load_stack():
     """Load the stack file."""
     root = get_project_root()
-    if not root:
-        print(f"Error: No {STACK_FILE} found. Not in a stackproj project?", file=sys.stderr)
-        sys.exit(1)
     stack_file = root / STACK_FILE
     if stack_file.exists():
         with open(stack_file) as f:
-            return yaml.safe_load(f)
-    return {"current": None, "features": {}}
+            data = yaml.safe_load(f)
+            if data:
+                return data
+    # Create new if doesn't exist
+    data = {"current": None, "features": {}}
+    save_stack(data, root)
+    print(f"Created {STACK_FILE} in {root}")
+    return data
 
 
-def save_stack(data):
+def save_stack(data, root=None):
     """Save the stack file."""
-    root = get_project_root()
+    if root is None:
+        root = get_project_root()
     stack_file = root / STACK_FILE
     with open(stack_file, "w") as f:
         yaml.dump(data, f, default_flow_style=False)
