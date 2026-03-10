@@ -1,7 +1,7 @@
 """Tests for stackproj add command."""
 import subprocess
 
-from tests.conftest import run_stackproj
+from .conftest import run_stackproj
 
 
 def test_add_creates_branch_in_submodule(git_repo_with_submodule):

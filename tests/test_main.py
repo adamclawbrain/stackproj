@@ -1,7 +1,7 @@
 """Tests for stackproj main command."""
 import subprocess
 
-from tests.conftest import run_stackproj
+from .conftest import run_stackproj
 
 
 def test_main_checks_out_main(git_repo_with_submodule):

@@ -1,5 +1,5 @@
 """Tests for stackproj list and status commands."""
-from tests.conftest import run_stackproj
+from .conftest import run_stackproj
 
 
 def test_list_shows_features(git_repo):

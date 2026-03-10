@@ -1,7 +1,7 @@
 """Tests for stackproj create command."""
 import subprocess
 
-from tests.conftest import run_stackproj
+from .conftest import run_stackproj
 
 
 def test_create_makes_branch(git_repo):

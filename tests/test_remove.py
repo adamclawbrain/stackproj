@@ -1,7 +1,7 @@
 """Tests for stackproj remove command."""
 import subprocess
 
-from tests.conftest import run_stackproj
+from .conftest import run_stackproj
 
 
 def test_remove_deletes_submodule_branch(git_repo_with_submodule):

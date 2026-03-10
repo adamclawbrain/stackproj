@@ -1,7 +1,7 @@
 """Tests for stackproj switch command."""
 import subprocess
 
-from tests.conftest import run_stackproj
+from .conftest import run_stackproj
 
 
 def test_switch_checks_out_superproject(git_repo_with_submodule):

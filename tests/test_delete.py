@@ -1,7 +1,7 @@
 """Tests for stackproj delete command."""
 import subprocess
 
-from tests.conftest import run_stackproj
+from .conftest import run_stackproj
 
 
 def test_delete_removes_superproject_branch(git_repo):
