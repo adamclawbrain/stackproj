@@ -188,7 +188,7 @@ def cmd_main(args):
     # Switch superproject to main
     run("git checkout main")
 
-    # Detach all submodules at their main branch HEAD
+    # Detach all submodules at the commit recorded in superproject HEAD
     submodules = []
     result = run("git submodule status", check=False)
     if result.returncode == 0:
@@ -197,9 +197,12 @@ def cmd_main(args):
                 parts = line.split()
                 if len(parts) >= 2:
                     submodule_path = parts[1]
-                    commit_hash = parts[0].lstrip("+")
-                    run(f"git -C {submodule_path} checkout {commit_hash}")
-                    submodules.append((submodule_path, commit_hash[:7]))
+                    # Get the commit recorded in superproject HEAD (not current submodule state)
+                    recorded = run(f"git ls-tree HEAD {submodule_path}")
+                    if recorded.returncode == 0:
+                        commit_hash = recorded.stdout.split()[1]
+                        run(f"git -C {submodule_path} checkout {commit_hash}")
+                        submodules.append((submodule_path, commit_hash[:7]))
 
     # Print in columns
     if submodules:
