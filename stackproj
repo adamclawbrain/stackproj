@@ -250,25 +250,28 @@ def cmd_delete(args):
         print("Cancelled")
         return
 
-    # Delete superproject branch (switch to main first if needed)
+    # Switch superproject to main first (can't delete checked-out branch)
     current = run("git rev-parse --abbrev-ref HEAD").stdout.strip()
     if current == feature:
         run("git checkout main")
-    run(f"git branch -D {feature}", check=False)
 
-    # Delete submodule branches (explicitly tracked)
+    # Switch submodules to main first, then delete branches
     for s in submodules:
         if os.path.exists(s):
+            branch_result = run(f"git -C {s} rev-parse --abbrev-ref HEAD", check=False)
+            if branch_result.returncode == 0 and branch_result.stdout.strip() == info['submodules'][s]['branch']:
+                run(f"git -C {s} checkout main", check=False)
             run(f"git -C {s} branch -D {info['submodules'][s]['branch']}", check=False)
 
-    # Delete any other submodules on this feature branch
     for s, b in all_submodule_branches:
         if s not in submodules and os.path.exists(s):
-            # Switch away first if on that branch
             branch_result = run(f"git -C {s} rev-parse --abbrev-ref HEAD", check=False)
             if branch_result.returncode == 0 and branch_result.stdout.strip() == b:
                 run(f"git -C {s} checkout main", check=False)
             run(f"git -C {s} branch -D {b}", check=False)
+
+    # Now delete superproject branch
+    run(f"git branch -D {feature}", check=False)
 
     # Remove from stack
     del stack["features"][feature]
