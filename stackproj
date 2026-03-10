@@ -301,7 +301,8 @@ def main():
     p_delete.add_argument("feature", help="Feature name")
     p_delete.set_defaults(func=cmd_delete)
 
-    subparsers.add_parser("main", help="Switch to main, detach submodules")
+    p_main = subparsers.add_parser("main", help="Switch to main, detach submodules")
+    p_main.set_defaults(func=cmd_main)
     p_status = subparsers.add_parser("status", help="Show current status")
     p_status.set_defaults(func=cmd_status)
     p_list = subparsers.add_parser("list", help="List all features")
