@@ -11,13 +11,14 @@ Usage:
 """
 
 import argparse
-import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 
-STACK_FILE = ".stackproj.json"
+import yaml
+
+STACK_FILE = ".stackproj.yml"
 
 
 def get_project_root():
@@ -48,7 +49,7 @@ def load_stack():
     stack_file = root / STACK_FILE
     if stack_file.exists():
         with open(stack_file) as f:
-            return json.load(f)
+            return yaml.safe_load(f)
     return {"current": None, "features": {}}
 
 
@@ -57,7 +58,7 @@ def save_stack(data):
     root = get_project_root()
     stack_file = root / STACK_FILE
     with open(stack_file, "w") as f:
-        json.dump(data, f, indent=2)
+        yaml.dump(data, f, default_flow_style=False)
 
 
 def cmd_create(args):

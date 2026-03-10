@@ -61,5 +61,6 @@ stackproj switch payment-overhaul
 ## Requirements
 
 - Python 3.7+
+- PyYAML: `pip install pyyaml`
 - git
 - submodules must be initialized (`git submodule update --init`)
