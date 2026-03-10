@@ -36,7 +36,7 @@ stackproj list
 
 ## How it works
 
-- `.stackproj.json` - JSON file in project root tracking features and submodule branches
+- `.stackproj.yml` - YAML file in project root tracking features and submodule branches
 - `stackproj create` - Creates branch in superproject, optionally in all submodules
 - `stackproj add` - Creates a `<feature>-<submodule>` branch in that submodule
 - `stackproj switch` - Checks out superproject branch + all associated submodule branches
