@@ -212,6 +212,45 @@ def cmd_list(args):
             print(f"    - {s}: {info['submodules'][s]['branch']}")
 
 
+def cmd_remove(args):
+    """Remove a submodule from current feature."""
+    stack = load_stack()
+    current = stack.get("current")
+    submodule = args.submodule
+
+    if not current:
+        print("Error: No feature selected")
+        sys.exit(1)
+
+    if current not in stack["features"]:
+        print(f"Error: Feature '{current}' not found")
+        sys.exit(1)
+
+    if submodule not in stack["features"][current]["submodules"]:
+        print(f"Error: Submodule '{submodule}' not in feature '{current}'")
+        sys.exit(1)
+
+    branch = stack["features"][current]["submodules"][submodule]["branch"]
+
+    # Get recorded commit from superproject main
+    result = run(f"git ls-tree HEAD {submodule}")
+    if result.returncode == 0:
+        commit_hash = result.stdout.split()[1]
+        if os.path.exists(submodule):
+            # Checkout recorded commit
+            run(f"git -C {submodule} checkout {commit_hash}")
+            print(f"  {submodule}: detached at {commit_hash[:7]}")
+
+            # Delete the feature branch
+            run(f"git -C {submodule} branch -D {branch}", check=False)
+            print(f"  {submodule}: deleted branch '{branch}'")
+
+    # Remove from stack
+    del stack["features"][current]["submodules"][submodule]
+    save_stack(stack)
+    print(f"Removed '{submodule}' from feature '{current}'")
+
+
 def cmd_doctor(args):
     """Check for problems and optionally fix them."""
     stack = load_stack()
@@ -419,6 +458,10 @@ def main():
     p_delete = subparsers.add_parser("delete", help="Delete a feature and its branches")
     p_delete.add_argument("feature", help="Feature name")
     p_delete.set_defaults(func=cmd_delete)
+
+    p_remove = subparsers.add_parser("remove", help="Remove a submodule from current feature")
+    p_remove.add_argument("submodule", help="Submodule path")
+    p_remove.set_defaults(func=cmd_remove)
 
     p_doctor = subparsers.add_parser("doctor", help="Check for problems")
     p_doctor.add_argument("--fix", action="store_true", help="Fix problems")
