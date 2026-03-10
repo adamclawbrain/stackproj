@@ -189,6 +189,7 @@ def cmd_main(args):
     run("git checkout main")
 
     # Detach all submodules at their main branch HEAD
+    submodules = []
     result = run("git submodule status", check=False)
     if result.returncode == 0:
         for line in result.stdout.strip().split("\n"):
@@ -196,10 +197,15 @@ def cmd_main(args):
                 parts = line.split()
                 if len(parts) >= 2:
                     submodule_path = parts[1]
-                    # Get the commit hash from the first column
                     commit_hash = parts[0]
                     run(f"git -C {submodule_path} checkout {commit_hash}")
-                    print(f"  {submodule_path}: detached at {commit_hash[:7]}")
+                    submodules.append((submodule_path, commit_hash[:7]))
+
+    # Print in columns
+    if submodules:
+        max_name = max(len(s[0]) for s in submodules)
+        for name, commit in submodules:
+            print(f"  {name.ljust(max_name)}  detached at {commit}")
 
     # Clear current
     stack["current"] = None
