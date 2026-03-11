@@ -39,8 +39,12 @@ def get_git_username():
     """Get git user name for branch naming."""
     result = run("git config user.name", check=False)
     if result.returncode == 0:
-        # Convert to lowercase, replace spaces with dashes
-        return result.stdout.strip().lower().replace(' ', '-')
+        # Convert to lowercase, replace spaces with dashes, keep only valid chars
+        import re
+        name = result.stdout.strip().lower().replace(' ', '-')
+        # Keep only alphanumeric and hyphens
+        name = re.sub(r'[^a-z0-9-]', '', name)
+        return name if name else "unknown"
     return "unknown"
 
 
