@@ -140,9 +140,21 @@ def cmd_add(args):
         # Create branch name: username/project/repo
         submodule_branch = f"{username}/{current}/{submodule}"
 
-        # Create branch in submodule
+        # Create branch in submodule - figure out base
         result = run(f"git -C {submodule} rev-parse --abbrev-ref HEAD", check=False)
-        base_branch = result.stdout.strip() if result.returncode == 0 else "main"
+        if result.returncode == 0:
+            current_ref = result.stdout.strip()
+            if current_ref == "HEAD":
+                # Detached - get recorded commit from superproject
+                recorded = run(f"git ls-tree HEAD {submodule}")
+                if recorded.returncode == 0:
+                    base_branch = recorded.stdout.split()[2][:7]  # short hash
+                else:
+                    base_branch = "main"
+            else:
+                base_branch = current_ref
+        else:
+            base_branch = "main"
 
         run(f"git -C {submodule} checkout -b {submodule_branch}")
 
