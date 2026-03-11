@@ -35,19 +35,6 @@ def is_valid_branch_name(name):
     return True
 
 
-def get_git_username():
-    """Get git user name for branch naming."""
-    result = run("git config user.name", check=False)
-    if result.returncode == 0:
-        # Convert to lowercase, replace spaces with dashes, keep only valid chars
-        import re
-        name = result.stdout.strip().lower().replace(' ', '-')
-        # Keep only alphanumeric and hyphens
-        name = re.sub(r'[^a-z0-9-]', '', name)
-        return name if name else "unknown"
-    return "unknown"
-
-
 def get_project_root():
     """Find the project root (where .stackproj.yml lives)."""
     cwd = Path.cwd()
@@ -141,8 +128,8 @@ def cmd_add(args):
             print(f"Error: Submodule '{submodule}' not found")
             continue
 
-        # Create branch name: username/project/repo
-        submodule_branch = f"{username}/{current}/{submodule}"
+        # Create branch name: feature/repo
+        submodule_branch = f"{current}/{submodule}"
 
         # Get the commit recorded in superproject HEAD for this submodule (our base)
         recorded = run(f"git ls-tree HEAD {submodule}")
