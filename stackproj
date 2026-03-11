@@ -120,9 +120,6 @@ def cmd_add(args):
         print("Error: No feature selected. Use 'stackproj create' first.")
         sys.exit(1)
 
-    # Get git username for branch naming
-    username = get_git_username()
-
     for submodule in args.submodules:
         if not os.path.exists(submodule):
             print(f"Error: Submodule '{submodule}' not found")
