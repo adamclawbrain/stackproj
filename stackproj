@@ -140,28 +140,23 @@ def cmd_add(args):
         # Create branch name: username/project/repo
         submodule_branch = f"{username}/{current}/{submodule}"
 
-        # Create branch in submodule - figure out base
-        result = run(f"git -C {submodule} rev-parse --abbrev-ref HEAD", check=False)
-        if result.returncode == 0:
-            current_ref = result.stdout.strip()
-            if current_ref == "HEAD":
-                # Detached - get recorded commit from superproject
-                recorded = run(f"git ls-tree HEAD {submodule}")
-                if recorded.returncode == 0:
-                    base_branch = recorded.stdout.split()[2][:7]  # short hash
-                else:
-                    base_branch = "main"
+        # Get the commit recorded in superproject HEAD for this submodule (our base)
+        recorded = run(f"git ls-tree HEAD {submodule}")
+        if recorded.returncode == 0 and recorded.stdout.strip():
+            parts = recorded.stdout.split()
+            if len(parts) >= 2:
+                base_commit = parts[2]  # full hash
             else:
-                base_branch = current_ref
+                base_commit = "main"
         else:
-            base_branch = "main"
+            base_commit = "main"
 
         run(f"git -C {submodule} checkout -b {submodule_branch}")
 
-        # Record it
+        # Record it - base is the commit we're branching from
         stack["features"][current]["submodules"][submodule] = {
             "branch": submodule_branch,
-            "base": base_branch
+            "base": base_commit
         }
         print(f"Added '{submodule}' to feature '{current}' as branch '{submodule_branch}'")
 
@@ -534,6 +529,60 @@ def cmd_pr_create(args):
             print(f"{submodule}: failed - {result.stderr.strip()}")
 
 
+def cmd_rebase(args):
+    """Rebase submodules onto current main and update base."""
+    stack = load_stack()
+    current = stack.get("current")
+
+    if not current:
+        print("Error: No feature selected")
+        sys.exit(1)
+
+    if current not in stack["features"]:
+        print(f"Error: Feature '{current}' not found")
+        sys.exit(1)
+
+    repos = args.repos if args.repos else list(stack["features"][current]["submodules"].keys())
+
+    # Fetch latest from origin in superproject first
+    run("git fetch origin", check=False)
+    run("git checkout main")
+    run("git pull origin main", check=False)
+
+    for repo in repos:
+        if repo not in stack["features"][current]["submodules"]:
+            print(f"Error: '{repo}' not in feature '{current}'")
+            continue
+
+        subinfo = stack["features"][current]["submodules"][repo]
+        branch = subinfo["branch"]
+
+        if not os.path.exists(repo):
+            print(f"{repo}: not found, skipping")
+            continue
+
+        # Fetch latest in submodule
+        run(f"git -C {repo} fetch origin", check=False)
+
+        # Rebase onto main
+        result = run(f"git -C {repo} rebase origin/main", check=False)
+        if result.returncode == 0:
+            print(f"{repo}: rebased onto main")
+            # Update base to new commit
+            new_base = run(f"git -C {repo} merge-base origin/main {branch}")
+            if new_base.returncode == 0:
+                new_base_commit = new_base.stdout.strip()
+                stack["features"][current]["submodules"][repo]["base"] = new_base_commit
+                print(f"{repo}: base updated to {new_base_commit[:7]}")
+            else:
+                print(f"{repo}: couldn't determine new base", file=sys.stderr)
+        else:
+            print(f"{repo}: rebase failed - {result.stderr.strip()}", file=sys.stderr)
+
+    save_stack(stack)
+    print(f"Rebase complete for '{current}'")
+
+
 def cmd_delete(args):
     """Delete a feature and all its branches."""
     stack = load_stack()
@@ -634,6 +683,10 @@ def main():
     p_pr_create = p_pr_sub.add_parser("create", help="Create PRs for feature")
     p_pr_create.add_argument("repos", nargs="*", help="Repo(s) to create PRs for (default: all)")
     p_pr_create.set_defaults(func=cmd_pr_create)
+
+    p_rebase = subparsers.add_parser("rebase", help="Rebase submodules onto current main")
+    p_rebase.add_argument("repos", nargs="*", help="Repo(s) to rebase (default: all)")
+    p_rebase.set_defaults(func=cmd_rebase)
 
     p_delete = subparsers.add_parser("delete", help="Delete a feature and its branches")
     p_delete.add_argument("feature", help="Feature name")
