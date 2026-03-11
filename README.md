@@ -46,6 +46,12 @@ stackproj delete featureA
 # Check for problems
 stackproj doctor
 stackproj doctor fix  # auto-fix
+
+# PR management
+stackproj pr status              # Show PR status for current feature
+stackproj pr create              # Create PRs for all repos
+stackproj pr create portal       # Create PR for just portal
+stackproj pr create portal product  # Create PR for multiple
 ```
 
 ## Branch Naming
@@ -64,6 +70,8 @@ Feature names must be valid git branch names (letters, numbers, dashes, undersco
 - `stackproj remove` - Restores submodule to superproject HEAD, deletes feature branch
 - `stackproj main` - Switches superproject to main, detaches all submodules at recorded commits
 - `stackproj delete` - Deletes feature from superproject and all submodules
+- `stackproj pr status` - Shows PR status for current feature (from GitHub)
+- `stackproj pr create` - Creates PRs for superproject and submodules (skips existing)
 
 ## Example workflow
 
@@ -92,4 +100,5 @@ stackproj delete login-redesign
 - Python 3.7+
 - PyYAML: `pip install pyyaml`
 - git
+- gh CLI: `brew install gh` or see https://cli.github.com
 - submodules must be initialized (`git submodule update --init`)
