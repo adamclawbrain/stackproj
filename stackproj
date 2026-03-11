@@ -377,6 +377,151 @@ def cmd_main(args):
     print("Switched to main, submodules detached")
 
 
+def cmd_pr_status(args):
+    """Show PR status for current feature."""
+    stack = load_stack()
+    current = stack.get("current")
+
+    if not current:
+        print("Error: No feature selected")
+        sys.exit(1)
+
+    if current not in stack["features"]:
+        print(f"Error: Feature '{current}' not found")
+        sys.exit(1)
+
+    info = stack["features"][current]
+    base = info.get("base", "main")
+
+    print(f"Feature: {current} (base: {base})")
+    print()
+
+    # Check superproject PR
+    result = run(f"gh pr list --head {current} --state all --json number,title,url,state", check=False)
+    if result.returncode == 0 and result.stdout.strip():
+        import json
+        prs = json.loads(result.stdout)
+        if prs:
+            pr = prs[0]
+            print(f"  superproject: #{pr['number']} {pr['state']} - {pr['title']}")
+            print(f"    {pr['url']}")
+        else:
+            print(f"  superproject: no PR")
+    else:
+        print(f"  superproject: no PR")
+
+    # Check submodule PRs
+    for submodule, subinfo in info["submodules"].items():
+        branch = subinfo["branch"]
+        # Get submodule repo URL from .gitmodules
+        result = run(f"git config --get submodule.{submodule}.url", check=False)
+        if result.returncode == 0 and result.stdout.strip():
+            repo_url = result.stdout.strip()
+            # Extract owner/repo from URL
+            if "github.com" in repo_url:
+                # Handle both https://github.com/owner/repo and git@github.com:owner/repo.git
+                parts = repo_url.replace(".git", "").split("/")
+                if ":" in repo_url:
+                    # SSH format
+                    owner = parts[-2]
+                    repo = parts[-1]
+                else:
+                    owner = parts[-2]
+                    repo = parts[-1]
+                # Check PR using gh
+                pr_result = run(f"gh pr list --repo {owner}/{repo} --head {branch} --state all --json number,title,url,state", check=False)
+                if pr_result.returncode == 0 and pr_result.stdout.strip():
+                    import json
+                    prs = json.loads(pr_result.stdout)
+                    if prs:
+                        pr = prs[0]
+                        print(f"  {submodule}: #{pr['number']} {pr['state']} - {pr['title']}")
+                        print(f"    {pr['url']}")
+                    else:
+                        print(f"  {submodule}: no PR")
+                else:
+                    print(f"  {submodule}: no PR (repo not accessible?)")
+            else:
+                print(f"  {submodule}: not a github repo")
+        else:
+            print(f"  {submodule}: not found")
+
+
+def cmd_pr_create(args):
+    """Create PRs for current feature."""
+    stack = load_stack()
+    current = stack.get("current")
+
+    if not current:
+        print("Error: No feature selected")
+        sys.exit(1)
+
+    if current not in stack["features"]:
+        print(f"Error: Feature '{current}' not found")
+        sys.exit(1)
+
+    info = stack["features"][current]
+    base = info.get("base", "main")
+    repos = args.repos if args.repos else list(info["submodules"].keys())
+
+    # Check superproject PR first if not a specific repo
+    if not repos or "superproject" in repos:
+        result = run(f"gh pr list --head {current} --state all", check=False)
+        if result.returncode == 0 and result.stdout.strip():
+            print(f"superproject: PR already exists")
+        else:
+            result = run(f"gh pr create --base {base} --head {current} --title '{current}' --body 'Feature: {current}'", check=False)
+            if result.returncode == 0:
+                print(f"superproject: PR created - {result.stdout.strip()}")
+            else:
+                print(f"superproject: failed to create PR - {result.stderr.strip()}")
+
+    # Create PRs for submodules
+    for submodule in repos:
+        if submodule == "superproject":
+            continue
+        if submodule not in info["submodules"]:
+            print(f"Error: Submodule '{submodule}' not in feature '{current}'")
+            continue
+
+        subinfo = info["submodules"][submodule]
+        branch = subinfo["branch"]
+
+        # Get submodule repo URL from .gitmodules
+        result = run(f"git config --get submodule.{submodule}.url", check=False)
+        if result.returncode != 0 or not result.stdout.strip():
+            print(f"{submodule}: not found in .gitmodules")
+            continue
+
+        repo_url = result.stdout.strip()
+
+        if "github.com" not in repo_url:
+            print(f"{submodule}: not a github repo, skipping")
+            continue
+
+        # Extract owner/repo
+        parts = repo_url.replace(".git", "").split("/")
+        if ":" in repo_url:
+            owner = parts[-2]
+            repo = parts[-1]
+        else:
+            owner = parts[-2]
+            repo = parts[-1]
+
+        # Check if PR exists
+        result = run(f"gh pr list --repo {owner}/{repo} --head {branch} --state all", check=False)
+        if result.returncode == 0 and result.stdout.strip():
+            print(f"{submodule}: PR already exists")
+            continue
+
+        # Create PR
+        result = run(f"gh pr create --repo {owner}/{repo} --base {base} --head {branch} --title '{current}/{submodule}' --body 'Part of feature: {current}'", check=False)
+        if result.returncode == 0:
+            print(f"{submodule}: PR created - {result.stdout.strip()}")
+        else:
+            print(f"{submodule}: failed - {result.stderr.strip()}")
+
+
 def cmd_delete(args):
     """Delete a feature and all its branches."""
     stack = load_stack()
@@ -466,6 +611,17 @@ def main():
     p_switch = subparsers.add_parser("switch", help="Switch to a feature")
     p_switch.add_argument("feature", help="Feature name")
     p_switch.set_defaults(func=cmd_switch)
+
+    # PR subcommands
+    p_pr = subparsers.add_parser("pr", help="PR commands")
+    p_pr_sub = p_pr.add_subparsers()
+
+    p_pr_status = p_pr_sub.add_parser("status", help="Show PR status for current feature")
+    p_pr_status.set_defaults(func=cmd_pr_status)
+
+    p_pr_create = p_pr_sub.add_parser("create", help="Create PRs for feature")
+    p_pr_create.add_argument("repos", nargs="*", help="Repo(s) to create PRs for (default: all)")
+    p_pr_create.set_defaults(func=cmd_pr_create)
 
     p_delete = subparsers.add_parser("delete", help="Delete a feature and its branches")
     p_delete.add_argument("feature", help="Feature name")
