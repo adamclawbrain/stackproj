@@ -21,6 +21,32 @@ import yaml
 STACK_FILE = ".stackproj.yml"
 
 
+def has_uncommitted_changes(repo_path=None):
+    """Check if there are uncommitted changes in a repo."""
+    result = run(f"git -C {repo_path} status --porcelain", check=False)
+    if result.returncode != 0:
+        return False
+    return bool(result.stdout.strip())
+
+
+def check_for_changes():
+    """Check for uncommitted changes in superproject and submodules. Returns True if changes exist."""
+    changes = []
+    if has_uncommitted_changes():
+        changes.append("superproject")
+    # Check submodules
+    result = run("git submodule status", check=False)
+    if result.returncode == 0:
+        for line in result.stdout.strip().split("\n"):
+            if line and not line.startswith("fatal:"):
+                parts = line.split()
+                if len(parts) >= 2:
+                    submodule_path = parts[1]
+                    if os.path.exists(submodule_path) and has_uncommitted_changes(submodule_path):
+                        changes.append(submodule_path)
+    return changes
+
+
 def is_valid_branch_name(name):
     """Check if name is valid for git branch."""
     invalid_chars = ['~', '^', ':', '\\', ' ', '#', '[', ']']
@@ -160,6 +186,16 @@ def cmd_switch(args):
         print(f"Error: Feature '{feature}' not found")
         sys.exit(1)
 
+    # Check for uncommitted changes
+    changes = check_for_changes()
+    if changes:
+        print(f"Warning: uncommitted changes in: {', '.join(changes)}")
+        print("These changes will be lost!")
+        confirm = input("Continue? (type 'yes'): ")
+        if confirm != "yes":
+            print("Cancelled")
+            return
+
     # Switch superproject
     run(f"git checkout {feature}")
 
@@ -237,6 +273,15 @@ def cmd_remove(args):
     if submodule not in stack["features"][current]["submodules"]:
         print(f"Error: Submodule '{submodule}' not in feature '{current}'")
         sys.exit(1)
+
+    # Check for uncommitted changes
+    if has_uncommitted_changes(submodule):
+        print(f"Warning: uncommitted changes in '{submodule}'")
+        print("These changes will be lost!")
+        confirm = input("Continue? (type 'yes'): ")
+        if confirm != "yes":
+            print("Cancelled")
+            return
 
     branch = stack["features"][current]["submodules"][submodule]["branch"]
 
@@ -341,6 +386,16 @@ def cmd_doctor(args):
 def cmd_main(args):
     """Switch back to main, detached head for all submodules."""
     stack = load_stack()
+
+    # Check for uncommitted changes
+    changes = check_for_changes()
+    if changes:
+        print(f"Warning: uncommitted changes in: {', '.join(changes)}")
+        print("These changes will be lost!")
+        confirm = input("Continue? (type 'yes'): ")
+        if confirm != "yes":
+            print("Cancelled")
+            return
 
     # Switch superproject to main
     run("git checkout main")
