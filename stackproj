@@ -11,6 +11,7 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -30,20 +31,14 @@ def has_uncommitted_changes(repo_path=None):
 
 
 def check_for_changes():
-    """Check for uncommitted changes in superproject and submodules. Returns True if changes exist."""
+    """Check for uncommitted changes in superproject and submodules. Returns list of dirty paths."""
     changes = []
     if has_uncommitted_changes():
         changes.append("superproject")
     # Check submodules
-    result = run("git submodule status", check=False)
-    if result.returncode == 0:
-        for line in result.stdout.strip().split("\n"):
-            if line and not line.startswith("fatal:"):
-                parts = line.split()
-                if len(parts) >= 2:
-                    submodule_path = parts[1]
-                    if os.path.exists(submodule_path) and has_uncommitted_changes(submodule_path):
-                        changes.append(submodule_path)
+    for submodule_path in iter_submodule_paths():
+        if os.path.exists(submodule_path) and has_uncommitted_changes(submodule_path):
+            changes.append(submodule_path)
     return changes
 
 
@@ -106,6 +101,64 @@ def save_stack(data, root=None):
         yaml.dump(data, f, default_flow_style=False)
 
 
+def iter_submodule_paths():
+    """Yield each submodule path from git submodule status.
+
+    Skips lines that are empty or start with 'fatal:'.
+    """
+    result = run("git submodule status", check=False)
+    if result.returncode != 0:
+        return
+    for line in result.stdout.strip().split("\n"):
+        if line and not line.startswith("fatal:"):
+            parts = line.split()
+            if len(parts) >= 2:
+                yield parts[1]
+
+
+def get_submodule_recorded_commit(submodule_path):
+    """Return the commit hash recorded in superproject HEAD for a submodule, or None."""
+    result = run(f"git ls-tree HEAD {submodule_path}", check=False)
+    if result.returncode == 0 and result.stdout.strip():
+        parts = result.stdout.split()
+        if len(parts) >= 3:
+            return parts[2]
+    return None
+
+
+def confirm_proceed_with_changes(changes):
+    """Prompt user to confirm proceeding despite uncommitted changes.
+
+    Args:
+        changes: list of repo paths with changes (or empty list if none)
+    Returns:
+        True if user confirmed or no changes, False if cancelled
+    """
+    if not changes:
+        return True
+    print(f"Warning: uncommitted changes in: {', '.join(changes)}")
+    print("These changes will be lost!")
+    if input("Continue? (type 'yes'): ") != "yes":
+        print("Cancelled")
+        return False
+    return True
+
+
+def parse_github_owner_repo(repo_url):
+    """Extract (owner, repo) from a GitHub HTTPS or SSH URL.
+
+    Returns:
+        (owner, repo) tuple, or (None, None) if not a GitHub URL
+    """
+    if "github.com" not in repo_url:
+        return None, None
+    parts = repo_url.replace(".git", "").split("/")
+    if len(parts) >= 2:
+        # For SSH git@github.com:owner/repo, strip the host from parts[-2]
+        return parts[-2].split(":")[-1], parts[-1]
+    return None, None
+
+
 def cmd_create(args):
     """Create a new feature branch."""
     stack = load_stack()
@@ -155,15 +208,7 @@ def cmd_add(args):
         submodule_branch = f"{current}/{submodule}"
 
         # Get the commit recorded in superproject HEAD for this submodule (our base)
-        recorded = run(f"git ls-tree HEAD {submodule}")
-        if recorded.returncode == 0 and recorded.stdout.strip():
-            parts = recorded.stdout.split()
-            if len(parts) >= 2:
-                base_commit = parts[2]  # full hash
-            else:
-                base_commit = "main"
-        else:
-            base_commit = "main"
+        base_commit = get_submodule_recorded_commit(submodule) or "main"
 
         run(f"git -C {submodule} checkout -b {submodule_branch}")
 
@@ -187,30 +232,18 @@ def cmd_switch(args):
         sys.exit(1)
 
     # Check for uncommitted changes
-    changes = check_for_changes()
-    if changes:
-        print(f"Warning: uncommitted changes in: {', '.join(changes)}")
-        print("These changes will be lost!")
-        confirm = input("Continue? (type 'yes'): ")
-        if confirm != "yes":
-            print("Cancelled")
-            return
+    if not confirm_proceed_with_changes(check_for_changes()):
+        return
 
     # Switch superproject
     run(f"git checkout {feature}")
 
     # First: reset ALL submodules to superproject HEAD pointer (detached)
-    result = run("git submodule status", check=False)
-    for line in result.stdout.strip().split("\n"):
-        if line and not line.startswith("fatal:"):
-            parts = line.split()
-            if len(parts) >= 2:
-                submodule_path = parts[1]
-                if os.path.exists(submodule_path):
-                    recorded = run(f"git ls-tree HEAD {submodule_path}")
-                    if recorded.returncode == 0:
-                        commit_hash = recorded.stdout.split()[2]
-                        run(f"git -C {submodule_path} checkout --detach -f {commit_hash}")
+    for submodule_path in iter_submodule_paths():
+        if os.path.exists(submodule_path):
+            commit_hash = get_submodule_recorded_commit(submodule_path)
+            if commit_hash:
+                run(f"git -C {submodule_path} checkout --detach -f {commit_hash}")
 
     # Then: switch each submodule to its feature branch
     for submodule, info in stack["features"][feature]["submodules"].items():
@@ -220,6 +253,21 @@ def cmd_switch(args):
             print(f"  {submodule}: {branch}")
         else:
             print(f"  Warning: {submodule} not found", file=sys.stderr)
+
+    # Also check for untracked submodules that have a matching feature branch
+    for submodule_path in iter_submodule_paths():
+        # Skip if already tracked
+        if submodule_path in stack["features"][feature]["submodules"]:
+            continue
+        # Check if untracked submodule has a matching feature branch
+        if os.path.exists(submodule_path):
+            # Try to find a branch matching the pattern <feature>/<submodule>
+            potential_branch = f"{feature}/{submodule_path}"
+            result = run(f"git -C {submodule_path} rev-parse --verify {potential_branch}", check=False)
+            if result.returncode == 0:
+                # Branch exists, check it out
+                run(f"git -C {submodule_path} checkout {potential_branch}")
+                print(f"  {submodule_path}: {potential_branch} (auto-detected)")
 
     stack["current"] = feature
     save_stack(stack)
@@ -275,28 +323,21 @@ def cmd_remove(args):
         sys.exit(1)
 
     # Check for uncommitted changes
-    if has_uncommitted_changes(submodule):
-        print(f"Warning: uncommitted changes in '{submodule}'")
-        print("These changes will be lost!")
-        confirm = input("Continue? (type 'yes'): ")
-        if confirm != "yes":
-            print("Cancelled")
-            return
+    if not confirm_proceed_with_changes([submodule] if has_uncommitted_changes(submodule) else []):
+        return
 
     branch = stack["features"][current]["submodules"][submodule]["branch"]
 
     # Get recorded commit from current superproject branch
-    result = run(f"git ls-tree HEAD {submodule}")
-    if result.returncode == 0:
-        commit_hash = result.stdout.split()[2]
-        if os.path.exists(submodule):
-            # Discard any local changes and checkout recorded commit
-            run(f"git -C {submodule} checkout -f {commit_hash}")
-            print(f"  {submodule}: detached at {commit_hash[:7]}")
+    commit_hash = get_submodule_recorded_commit(submodule)
+    if commit_hash and os.path.exists(submodule):
+        # Discard any local changes and checkout recorded commit
+        run(f"git -C {submodule} checkout -f {commit_hash}")
+        print(f"  {submodule}: detached at {commit_hash[:7]}")
 
-            # Delete the feature branch
-            run(f"git -C {submodule} branch -D {branch}", check=False)
-            print(f"  {submodule}: deleted branch '{branch}'")
+        # Delete the feature branch
+        run(f"git -C {submodule} branch -D {branch}", check=False)
+        print(f"  {submodule}: deleted branch '{branch}'")
 
     # Remove from stack
     del stack["features"][current]["submodules"][submodule]
@@ -331,26 +372,20 @@ def cmd_doctor(args):
 
     # Check 3: submodules on branches not tracked
     if os.path.exists(".gitmodules"):
-        result = run("git submodule status", check=False)
-        if result.returncode == 0:
-            for line in result.stdout.strip().split("\n"):
-                if line:
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        submodule_path = parts[1]
-                        # Check if on a branch
-                        branch_result = run(f"git -C {submodule_path} rev-parse --abbrev-ref HEAD", check=False)
-                        if branch_result.returncode == 0:
-                            current_branch = branch_result.stdout.strip()
-                            if current_branch != "HEAD":
-                                # Check if tracked
-                                tracked = False
-                                for feature, info in stack["features"].items():
-                                    if submodule_path in info["submodules"]:
-                                        if info["submodules"][submodule_path]["branch"] == current_branch:
-                                            tracked = True
-                                if not tracked:
-                                    problems.append(f"Submodule '{submodule_path}' on untracked branch '{current_branch}'")
+        for submodule_path in iter_submodule_paths():
+            # Check if on a branch
+            branch_result = run(f"git -C {submodule_path} rev-parse --abbrev-ref HEAD", check=False)
+            if branch_result.returncode == 0:
+                current_branch = branch_result.stdout.strip()
+                if current_branch != "HEAD":
+                    # Check if tracked
+                    tracked = False
+                    for feature, info in stack["features"].items():
+                        if submodule_path in info["submodules"]:
+                            if info["submodules"][submodule_path]["branch"] == current_branch:
+                                tracked = True
+                    if not tracked:
+                        problems.append(f"Submodule '{submodule_path}' on untracked branch '{current_branch}'")
 
     if not problems:
         print("No problems found")
@@ -388,32 +423,20 @@ def cmd_main(args):
     stack = load_stack()
 
     # Check for uncommitted changes
-    changes = check_for_changes()
-    if changes:
-        print(f"Warning: uncommitted changes in: {', '.join(changes)}")
-        print("These changes will be lost!")
-        confirm = input("Continue? (type 'yes'): ")
-        if confirm != "yes":
-            print("Cancelled")
-            return
+    if not confirm_proceed_with_changes(check_for_changes()):
+        return
 
     # Switch superproject to main
     run("git checkout main")
 
     # Detach all submodules at the commit recorded in superproject HEAD
     submodules = []
-    result = run("git submodule status", check=False)
-    for line in result.stdout.strip().split("\n"):
-        if line and not line.startswith("fatal:"):
-            parts = line.split()
-            if len(parts) >= 2:
-                submodule_path = parts[1]
-                # Get the commit recorded in superproject HEAD (not current submodule state)
-                recorded = run(f"git ls-tree HEAD {submodule_path}")
-                if recorded.returncode == 0:
-                    commit_hash = recorded.stdout.split()[2]
-                    run(f"git -C {submodule_path} checkout --detach -f {commit_hash}")
-                    submodules.append((submodule_path, commit_hash[:7]))
+    for submodule_path in iter_submodule_paths():
+        # Get the commit recorded in superproject HEAD (not current submodule state)
+        commit_hash = get_submodule_recorded_commit(submodule_path)
+        if commit_hash:
+            run(f"git -C {submodule_path} checkout --detach -f {commit_hash}")
+            submodules.append((submodule_path, commit_hash[:7]))
 
     # Print in columns
     if submodules:
@@ -468,20 +491,11 @@ def cmd_pr_status(args):
         if result.returncode == 0 and result.stdout.strip():
             repo_url = result.stdout.strip()
             # Extract owner/repo from URL
-            if "github.com" in repo_url:
-                # Handle both https://github.com/owner/repo and git@github.com:owner/repo.git
-                parts = repo_url.replace(".git", "").split("/")
-                if ":" in repo_url:
-                    # SSH format
-                    owner = parts[-2]
-                    repo = parts[-1]
-                else:
-                    owner = parts[-2]
-                    repo = parts[-1]
+            owner, repo = parse_github_owner_repo(repo_url)
+            if owner and repo:
                 # Check PR using gh
                 pr_result = run(f"gh pr list --repo {owner}/{repo} --head {branch} --state all --json number,title,url,state", check=False)
                 if pr_result.returncode == 0 and pr_result.stdout.strip():
-                    import json
                     prs = json.loads(pr_result.stdout)
                     if prs:
                         pr = prs[0]
@@ -545,18 +559,11 @@ def cmd_pr_create(args):
 
         repo_url = result.stdout.strip()
 
-        if "github.com" not in repo_url:
+        # Extract owner/repo
+        owner, repo = parse_github_owner_repo(repo_url)
+        if not owner or not repo:
             print(f"{submodule}: not a github repo, skipping")
             continue
-
-        # Extract owner/repo
-        parts = repo_url.replace(".git", "").split("/")
-        if ":" in repo_url:
-            owner = parts[-2]
-            repo = parts[-1]
-        else:
-            owner = parts[-2]
-            repo = parts[-1]
 
         # Check if PR exists
         result = run(f"gh pr list --repo {owner}/{repo} --head {branch} --state all", check=False)
@@ -641,19 +648,13 @@ def cmd_delete(args):
     # Also find any submodules with a branch matching the feature name (legacy)
     all_submodule_branches = []
     if os.path.exists(".gitmodules"):
-        result = run("git submodule status", check=False)
-        if result.returncode == 0:
-            for line in result.stdout.strip().split("\n"):
-                if line:
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        submodule_path = parts[1]
-                        # Check if this submodule has a branch matching the feature
-                        branch_result = run(f"git -C {submodule_path} rev-parse --abbrev-ref HEAD", check=False)
-                        if branch_result.returncode == 0:
-                            current_branch = branch_result.stdout.strip()
-                            if current_branch == feature:
-                                all_submodule_branches.append((submodule_path, feature))
+        for submodule_path in iter_submodule_paths():
+            # Check if this submodule has a branch matching the feature
+            branch_result = run(f"git -C {submodule_path} rev-parse --abbrev-ref HEAD", check=False)
+            if branch_result.returncode == 0:
+                current_branch = branch_result.stdout.strip()
+                if current_branch == feature:
+                    all_submodule_branches.append((submodule_path, feature))
 
     # Show what will be deleted
     print(f"Will delete feature '{feature}':")

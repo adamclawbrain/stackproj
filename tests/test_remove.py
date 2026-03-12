@@ -14,7 +14,7 @@ def test_remove_deletes_submodule_branch(git_repo_with_submodule):
         ["git", "-C", "my-submodule", "branch"],
         capture_output=True, text=True
     )
-    assert "test/feature1/my-submodule" in result.stdout
+    assert "feature1/my-submodule" in result.stdout
 
     # Remove
     result = run_stackproj(["remove", "my-submodule"])
@@ -25,7 +25,7 @@ def test_remove_deletes_submodule_branch(git_repo_with_submodule):
         ["git", "-C", "my-submodule", "branch"],
         capture_output=True, text=True
     )
-    assert "test/feature1/my-submodule" not in result.stdout
+    assert "feature1/my-submodule" not in result.stdout
 
 
 def test_remove_restores_superproject_pointer(git_repo_with_submodule):

@@ -52,6 +52,7 @@ def git_repo_with_submodule(git_repo, temp_dir):
 
     # Go back to main repo and add submodule
     os.chdir(git_repo)
+    subprocess.run(["git", "config", "protocol.file.allow", "always"], check=True, capture_output=True)
     subprocess.run(["git", "submodule", "add", str(submod_dir), "my-submodule"], check=True, capture_output=True, env={**os.environ, "GIT_PROTOCOL_FROM_USER": "1"})
     subprocess.run(["git", "add", "."], check=True, capture_output=True)
     subprocess.run(["git", "commit", "-m", "add submodule"], check=True, capture_output=True)
